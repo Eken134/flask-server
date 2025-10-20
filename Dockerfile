@@ -1,36 +1,30 @@
-# syntax=docker/dockerfile:1.6
+# Dockerfile
+FROM python:3.11-slim
 
-# --- Base image (slim) ---
-FROM --platform=$BUILDPLATFORM python:3.11-slim AS base
-
-# Metadata
-LABEL maintainer="Johan Eelde Koivisto <Johan@eelde-koivisto.se>"
-LABEL description="Flask-SocketIO gateway (multi-arch ready)"
-
-# Miljöinställningar
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# --- System dependencies ---
+# OS-build-deps (krävs för eventlet/greenlet m.fl.) + certs
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl && \
-    rm -rf /var/lib/apt/lists/*
+      build-essential gcc python3-dev libffi-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# --- Copy & install Python dependencies ---
+# Dependencies först (bättre cache)
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN python -m pip install --upgrade pip setuptools wheel \
+ && pip install --no-cache-dir -r requirements.txt
 
-# --- Copy application ---
+# App-kod
 COPY app.py .
 
-# --- Non-root user ---
+# Kör som non-root
 RUN useradd -u 1000 -m appuser
 USER appuser
 
-# --- Default ENV ---
+# Default ENVs (kan överskridas i K8s)
 ENV REDIS_HOST=redis \
     REDIS_PORT=6379 \
     LATEST_HASH_KEY=latest:ohlc \
@@ -39,6 +33,4 @@ ENV REDIS_HOST=redis \
     STREAM_MAXLEN=100000
 
 EXPOSE 5000
-
-# --- Entrypoint ---
 CMD ["python", "app.py"]
